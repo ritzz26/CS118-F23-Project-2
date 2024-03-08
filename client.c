@@ -20,13 +20,6 @@ void init_fd_set(int send_sockfd) {
     FD_SET(send_sockfd, &master_fds);
 }
 
-struct packet {
-    unsigned short sequence_number;
-    unsigned short acknowledgment_number;
-    char payload[PAYLOAD_SIZE];
-    };
-
-
 // Check for incoming acknowledgments
 int check_for_ack(struct packet *ack_pkt, int seq_num, int send_sockfd, struct sockaddr_in server_addr_from) {
     read_fds = master_fds;
@@ -42,7 +35,7 @@ int check_for_ack(struct packet *ack_pkt, int seq_num, int send_sockfd, struct s
                 if (recv_len > 0) {
                     struct packet ack_pkt;
                     memcpy(&ack_pkt, buffer, recv_len);
-                    if (ack_pkt.acknowledgment_number == seq_num - 1) {
+                    if (ack_pkt.acknum == seq_num - 1) {
                         return 1;
                     }
                 }
@@ -115,7 +108,7 @@ int main(int argc, char *argv[]) {
     }
 
     int bytes_read;
-    while  ((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) {
+    while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) {
         // create segmented data
         int segment;
         //TODO: HOW DO WE WANT TO SELECT CHUNK AND SEGMENT SIZE
@@ -127,8 +120,9 @@ int main(int argc, char *argv[]) {
                 chunk = PAYLOAD_SIZE;
             }
             struct packet pkt;
-            pkt.sequence_number = segment;
-            pkt.acknowledgment_number = 0; 
+            // build_packet(pkt, seq_num, seq_num, );
+            pkt.seqnum = segment;
+            pkt.acknum = 0; 
             memcpy(pkt.payload, buffer + offset, chunk);
 
             // Send data to server
