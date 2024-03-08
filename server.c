@@ -48,10 +48,34 @@ int main() {
     client_addr_to.sin_addr.s_addr = inet_addr(LOCAL_HOST);
     client_addr_to.sin_port = htons(CLIENT_PORT_TO);
 
+
     // Open the target file for writing (always write to output.txt)
     FILE *fp = fopen("output.txt", "wb");
-
     // TODO: Receive file from the client and save it as output.txt
+    char last = 0;
+    while (!last) {
+        char buffer_temp[PAYLOAD_SIZE];
+        printf("HERE");
+        fflush(stdout);
+        int bytes_read = recvfrom(listen_sockfd, buffer_temp, PAYLOAD_SIZE, 0,  (struct sockaddr *) &client_addr_from, &addr_size);
+        if (bytes_read == -1) {
+            perror("failed to receive");
+            return 1;
+        }
+        printf("HERE2");
+        fflush(stdout);
+        struct packet* rec_pkt;
+        memcpy(rec_pkt, buffer_temp, rec_pkt->length);
+        printRecv(rec_pkt);
+        if(rec_pkt->seqnum == expected_seq_num){
+            expected_seq_num = rec_pkt->seqnum + rec_pkt->length;
+        }
+        build_packet(&ack_pkt, rec_pkt->seqnum, expected_seq_num, 0, 1, rec_pkt->length, rec_pkt->payload);
+        if(rec_pkt->last==1){
+            last = 1;
+        }
+        //SENDPACKETTOCLIENT
+    }
     
 
     fclose(fp);

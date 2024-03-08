@@ -9,40 +9,30 @@
 #include <sys/select.h>
 
 #define TIMEOUT_SEC 2
-fd_set master_fds, read_fds;
+// fd_set master_fds, read_fds;
 struct timeval timeout;
 
 
-// Initialize the file descriptor set
-void init_fd_set(int send_sockfd) {
-    FD_ZERO(&master_fds);
-    FD_ZERO(&read_fds);
-    FD_SET(send_sockfd, &master_fds);
-}
+// // Initialize the file descriptor set
+// void init_fd_set(int send_sockfd) {
+//     FD_ZERO(&master_fds);
+//     FD_ZERO(&read_fds);
+//     FD_SET(send_sockfd, &master_fds);
+// }
 
 // Check for incoming acknowledgments
-int check_for_ack(struct packet *ack_pkt, int seq_num, int send_sockfd, struct sockaddr_in server_addr_from) {
-    read_fds = master_fds;
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = 0;
-
-    if (select(send_sockfd + 1, &read_fds, NULL, NULL, &timeout) > 0) {
-        for (int i = 0; i <= send_sockfd; ++i) {
-            if (FD_ISSET(i, &read_fds)) {
-                char buffer[PAYLOAD_SIZE];
-                socklen_t addr_size = sizeof(server_addr_from);
-                int recv_len = recvfrom(i, buffer, PAYLOAD_SIZE, 0, (struct sockaddr *)&server_addr_from, &addr_size);
-                if (recv_len > 0) {
-                    struct packet ack_pkt;
-                    memcpy(&ack_pkt, buffer, recv_len);
-                    if (ack_pkt.acknum == seq_num - 1) {
-                        return 1;
-                    }
-                }
-            }
-        }
+int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size) {
+    //listen_sockfd = file descriptor
+    char buffer[PAYLOAD_SIZE];
+    int bytes_read = recvfrom(listen_sockfd, buffer, PAYLOAD_SIZE, 0, &server_addr_to, &addr_size);
+    if (bytes_read<0){
+        return 0;
     }
-    return 0;
+    memcpy(ack_pkt, buffer, ack_pkt->length);
+    if(ack_pkt->ack == 1)
+        return 1;
+    else
+        return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,6 +87,16 @@ int main(int argc, char *argv[]) {
         close(listen_sockfd);
         return 1;
     }
+    
+    // if (bind(send_sockfd, (struct sockaddr *) &server_addr_to, sizeof(server_addr_to)) < 0) {
+    //     perror("Bind failed");
+    //     close(send_sockfd);
+    //     return 1;
+    // }
+    if (connect(send_sockfd, (struct sockaddr *)&server_addr_to, sizeof(server_addr_to)) < 0) {
+        perror("Bind failed");
+        return 1;
+    }//WE DONT KNOW IF THIS SHOULD BE HERE
 
     // Open file for reading
     FILE *fp = fopen(filename, "rb");
@@ -108,12 +108,11 @@ int main(int argc, char *argv[]) {
     }
 
     int bytes_read;
-    while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) {
-            struct packet* pkt;
-            build_packet(pkt, seq_num, seq_num+1, 0, 1, bytes_read, buffer);
+    while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) { //is payload_size the best number           
+            build_packet(&pkt, seq_num, seq_num+PAYLOAD_SIZE, 0, 1, bytes_read, buffer);//set last and ACK correclty
             // Send data to server
-            printSend(pkt, 0);
-            if (sendto(send_sockfd, &pkt, bytes_read, 0, (struct sockaddr *)&server_addr_to, sizeof(server_addr_from)) < 0) {
+            printSend(&pkt, 0);
+            if (sendto(send_sockfd, &pkt, PAYLOAD_SIZE, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 fclose(fp);
                 close(listen_sockfd);
@@ -121,15 +120,17 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
 
-            // TODO: Implement acknowledgment handling and timeout logic here
-            if (!check_for_ack(&ack_pkt, seq_num, send_sockfd, server_addr_from)) {
-                            int timeout_counter = 0;
-                            while (!check_for_ack(&ack_pkt, seq_num, send_sockfd, server_addr_from) && timeout_counter < 3) {
-                                timeout_counter++;
-                                sleep(TIMEOUT_SEC);
-                            }
-                        }
-            // Update sequence number for the next packet
+            // // TODO: Implement acknowledgment handling and timeout logic here
+            // if (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_to, addr_size)) {
+            //                 int timeout_counter = 0;
+            //                 // while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_to, addr_size) && timeout_counter < 3) {
+            //                 //     timeout_counter++;
+            //                 //     // sleep(TIMEOUT_SEC);
+            //                 // }
+            //                 printf("TIMEOUT");
+            //                 //TODO RESEND??
+            //             }
+            // // Update sequence number for the next packet
             seq_num+=PAYLOAD_SIZE;
     }
     
