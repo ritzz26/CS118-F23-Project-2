@@ -109,24 +109,11 @@ int main(int argc, char *argv[]) {
 
     int bytes_read;
     while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) {
-        // create segmented data
-        int segment;
-        //TODO: HOW DO WE WANT TO SELECT CHUNK AND SEGMENT SIZE
-        for (segment = 0; segment * PAYLOAD_SIZE < bytes_read; ++segment) {
-            // copy data
-            int offset = segment * PAYLOAD_SIZE;
-            int chunk = bytes_read - offset;
-            if (chunk > PAYLOAD_SIZE) {
-                chunk = PAYLOAD_SIZE;
-            }
-            struct packet pkt;
-            // build_packet(pkt, seq_num, seq_num, );
-            pkt.seqnum = segment;
-            pkt.acknum = 0; 
-            memcpy(pkt.payload, buffer + offset, chunk);
-
+            struct packet* pkt;
+            build_packet(pkt, seq_num, seq_num+1, 0, 1, bytes_read, buffer);
             // Send data to server
-            if (sendto(send_sockfd, &pkt, chunk, 0, (struct sockaddr *)&server_addr_to, sizeof(server_addr_from)) < 0) {
+            printSend(pkt, 0);
+            if (sendto(send_sockfd, &pkt, bytes_read, 0, (struct sockaddr *)&server_addr_to, sizeof(server_addr_from)) < 0) {
                 perror("Error sending data");
                 fclose(fp);
                 close(listen_sockfd);
@@ -143,8 +130,7 @@ int main(int argc, char *argv[]) {
                             }
                         }
             // Update sequence number for the next packet
-            seq_num++;
-        }
+            seq_num+=PAYLOAD_SIZE;
     }
     
     fclose(fp);

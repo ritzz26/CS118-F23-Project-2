@@ -52,7 +52,6 @@ int main() {
     FILE *fp = fopen("output.txt", "wb");
 
     // TODO: Receive file from the client and save it as output.txt
-
     
 
     fclose(fp);

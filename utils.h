@@ -24,7 +24,7 @@ struct packet {
     unsigned short seqnum;
     unsigned short acknum;
     char ack;
-    char last;
+    char last; //might be a flag for the last packet in the socket
     unsigned int length;
     char payload[PAYLOAD_SIZE];
 };
