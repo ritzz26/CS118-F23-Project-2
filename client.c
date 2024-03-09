@@ -28,7 +28,7 @@ int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct
     if (bytes_read<0){
         return 0;
     }
-    if(ack_pkt->ack == 1)
+    if((&temp)->ack == 1)
         return 1;
     else
         return 0;
@@ -98,7 +98,13 @@ int main(int argc, char *argv[]) {
 
     int bytes_read;
     while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) { //is payload_size the best number           
-            build_packet(&pkt, seq_num, seq_num+PAYLOAD_SIZE, 0, 0, bytes_read, buffer);//set last and ACK correclty
+            if (feof(fp)) {
+                // End of file is reached, modify the packet type in the build_packet call
+                build_packet(&pkt, seq_num, seq_num + PAYLOAD_SIZE, 1, 0, bytes_read, buffer);
+            }
+            else{
+                build_packet(&pkt, seq_num, seq_num+PAYLOAD_SIZE, 0, 0, bytes_read, buffer);
+            }
             // Send data to server
             printSend(&pkt, 0);
             if (sendto(send_sockfd, &pkt, PAYLOAD_SIZE, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
@@ -116,7 +122,6 @@ int main(int argc, char *argv[]) {
                                 timeout_counter++;
                             }
                             printf("TIMEOUT");
-                            //TODO RESEND??
                         }
             // Update sequence number for the next packet
             seq_num+=PAYLOAD_SIZE;
