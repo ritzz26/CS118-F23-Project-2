@@ -62,10 +62,11 @@
         FILE *fp = fopen("output.txt", "wb");
         // TODO: Receive file from the client and save it as output.txt
         char last = 0;
+        int chunk = PAYLOAD_SIZE/2;
         while (!last) {
             struct packet rec_pkt;
             
-            int bytes_read = recvfrom(listen_sockfd, &rec_pkt, PAYLOAD_SIZE, 0,  (struct sockaddr *)&server_addr, &addr_size);
+            int bytes_read = recvfrom(listen_sockfd, &rec_pkt, chunk, 0,  (struct sockaddr *)&server_addr, &addr_size);
             if (bytes_read <= 0) {
                 perror("failed to receive");
                 return 1;
@@ -79,7 +80,7 @@
             if((&rec_pkt)->last==1){
                 last = 1;
             }
-            if (sendto(send_sockfd, &ack_pkt, PAYLOAD_SIZE, 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
+            if (sendto(send_sockfd, &ack_pkt, chunk, 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
                     perror("Error sending ack");
                     fclose(fp);
                     close(listen_sockfd);

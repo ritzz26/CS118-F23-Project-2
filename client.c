@@ -7,10 +7,8 @@
 
 #include "utils.h"
 #include <sys/select.h>
-
-#define TIMEOUT_SEC 2
 // fd_set master_fds, read_fds;
-struct timeval timeout;
+
 
 
 // // Initialize the file descriptor set
@@ -24,6 +22,7 @@ struct timeval timeout;
 int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size) {
     //listen_sockfd = file descriptor
     struct packet temp;
+    // int bytes_read = recvfrom(listen_sockfd, &temp, PAYLOAD_SIZE, MSG_DONTWAIT, (struct sockaddr *)&server_addr_to, &addr_size);
     int bytes_read = recvfrom(listen_sockfd, &temp, PAYLOAD_SIZE, 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
@@ -96,18 +95,28 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 500000;
+
+    if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+        perror("Error setting receive timeout");
+        return 1;
+    }
+
     int bytes_read;
-    while((bytes_read = fread(buffer, 1, PAYLOAD_SIZE, fp))>0) { //is payload_size the best number           
+    int chunk = PAYLOAD_SIZE/2;
+    while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number           
             if (feof(fp)) {
                 // End of file is reached, modify the packet type in the build_packet call
-                build_packet(&pkt, seq_num, seq_num + PAYLOAD_SIZE, 1, 0, bytes_read, buffer);
+                build_packet(&pkt, seq_num, seq_num + chunk, 1, 0, bytes_read, buffer);
             }
             else{
-                build_packet(&pkt, seq_num, seq_num+PAYLOAD_SIZE, 0, 0, bytes_read, buffer);
+                build_packet(&pkt, seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
             }
             // Send data to server
             printSend(&pkt, 0);
-            if (sendto(send_sockfd, &pkt, PAYLOAD_SIZE, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+            if (sendto(send_sockfd, &pkt, chunk, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 fclose(fp);
                 close(listen_sockfd);
@@ -116,15 +125,27 @@ int main(int argc, char *argv[]) {
             }
 
             // TODO: Implement acknowledgment handling and timeout logic here
-            if (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-                            int timeout_counter = 0;
-                            while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size) && timeout_counter < 3) {
-                                timeout_counter++;
-                            }
-                            printf("TIMEOUT");
-                        }
+            while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
+      //          if (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
+                                int timeout_counter = 0;
+                                int ack=0;
+                                while (!ack && timeout_counter < TIMEOUT) {
+                                    timeout_counter++;
+                                    ack = check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size);
+                                }
+                                if(!ack){
+                                    printSend(&pkt, 1);
+                                    if (sendto(send_sockfd, &pkt, chunk, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                                        perror("Error sending data");
+                                        fclose(fp);
+                                        close(listen_sockfd);
+                                        close(send_sockfd);
+                                        return 1;
+                                    }       
+                                }
+                }
             // Update sequence number for the next packet
-            seq_num+=PAYLOAD_SIZE;
+            seq_num+=chunk;
     }
     
     fclose(fp);
