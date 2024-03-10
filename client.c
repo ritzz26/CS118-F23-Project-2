@@ -7,26 +7,15 @@
 
 #include "utils.h"
 #include <sys/select.h>
-// fd_set master_fds, read_fds;
-
-
-
-// // Initialize the file descriptor set
-// void init_fd_set(int send_sockfd) {
-//     FD_ZERO(&master_fds);
-//     FD_ZERO(&read_fds);
-//     FD_SET(send_sockfd, &master_fds);
-// }
 
 // Check for incoming acknowledgments
 int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size) {
-    //listen_sockfd = file descriptor
     struct packet temp;
-    // int bytes_read = recvfrom(listen_sockfd, &temp, PAYLOAD_SIZE, MSG_DONTWAIT, (struct sockaddr *)&server_addr_to, &addr_size);
-    int bytes_read = recvfrom(listen_sockfd, &temp, PAYLOAD_SIZE, 0, (struct sockaddr *)&server_addr_to, &addr_size);
+    int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
     }
+    // Check for the sequence number/acknum
     if((&temp)->ack == 1)
         return 1;
     else
@@ -105,32 +94,30 @@ int main(int argc, char *argv[]) {
     }
 
     int bytes_read;
-    int chunk = PAYLOAD_SIZE/2;
-    while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number           
+    int chunk = PAYLOAD_SIZE;
+    while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number        
             if (feof(fp)) {
                 // End of file is reached, modify the packet type in the build_packet call
-                build_packet(&pkt, seq_num, seq_num + chunk, 1, 0, bytes_read, buffer);
+                build_packet(&pkt, seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
             }
             else{
                 build_packet(&pkt, seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
             }
+            // printf("%s", pkt.payload);
             // Send data to server
-            printSend(&pkt, 0);
-            if (sendto(send_sockfd, &pkt, chunk, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+            // printSend(&pkt, 0);
+            if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
-                fclose(fp);
                 close(listen_sockfd);
                 close(send_sockfd);
                 return 1;
             }
-
             // TODO: Implement acknowledgment handling and timeout logic here
             while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
       //          
-                                    printSend(&pkt, 1);
-                                    if (sendto(send_sockfd, &pkt, chunk, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                                    // printSend(&pkt, 1);
+                                    if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                                         perror("Error sending data");
-                                        fclose(fp);
                                         close(listen_sockfd);
                                         close(send_sockfd);
                                         return 1;
@@ -139,7 +126,6 @@ int main(int argc, char *argv[]) {
             // Update sequence number for the next packet
             seq_num+=chunk;
     }
-    
     fclose(fp);
     close(listen_sockfd);
     close(send_sockfd);

@@ -11,7 +11,7 @@
         struct sockaddr_in server_addr, client_addr_from, client_addr_to;
         struct packet buffer;
         socklen_t addr_size = sizeof(client_addr_from);
-        int expected_seq_num = 0;
+        unsigned short expected_seq_num = 0;
         int recv_len;
         struct packet ack_pkt;
 
@@ -62,33 +62,33 @@
         FILE *fp = fopen("output.txt", "wb");
         // TODO: Receive file from the client and save it as output.txt
         char last = 0;
-        int chunk = PAYLOAD_SIZE/2;
+        int chunk = PAYLOAD_SIZE;
         while (!last) {
             struct packet rec_pkt;
             
-            int bytes_read = recvfrom(listen_sockfd, &rec_pkt, chunk, 0,  (struct sockaddr *)&server_addr, &addr_size);
+            int bytes_read = recvfrom(listen_sockfd, &rec_pkt, sizeof(struct packet), 0,  (struct sockaddr *)&server_addr, &addr_size);
             if (bytes_read <= 0) {
                 perror("failed to receive");
                 return 1;
             }
             // printRecv(&rec_pkt);
-
-            if((&rec_pkt)->seqnum == expected_seq_num){
+            // printf("%s", rec_pkt.payload);
+            if(rec_pkt.seqnum == expected_seq_num){
                 expected_seq_num = (&rec_pkt)->seqnum + (&rec_pkt)->length;
-                fprintf(fp, (&rec_pkt)->payload);
+                rec_pkt.payload[(&rec_pkt)->length] = '\0';
+                fprintf(fp, "%s", rec_pkt.payload);
             }
             build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
             if((&rec_pkt)->last==1){
                 last = 1;
             }
-            if (sendto(send_sockfd, &ack_pkt, chunk, 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
+            if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
                     perror("Error sending ack");
-                    fclose(fp);
                     close(listen_sockfd);
                     close(send_sockfd);
                     return 1;
                 }
-                printSend(&ack_pkt, 0);
+                // printSend(&ack_pkt, 0);
         }
 
         fclose(fp);
