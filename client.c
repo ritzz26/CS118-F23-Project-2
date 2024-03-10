@@ -126,14 +126,7 @@ int main(int argc, char *argv[]) {
 
             // TODO: Implement acknowledgment handling and timeout logic here
             while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-      //          if (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-                                int timeout_counter = 0;
-                                int ack=0;
-                                while (!ack && timeout_counter < TIMEOUT) {
-                                    timeout_counter++;
-                                    ack = check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size);
-                                }
-                                if(!ack){
+      //          
                                     printSend(&pkt, 1);
                                     if (sendto(send_sockfd, &pkt, chunk, 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                                         perror("Error sending data");
@@ -143,7 +136,6 @@ int main(int argc, char *argv[]) {
                                         return 1;
                                     }       
                                 }
-                }
             // Update sequence number for the next packet
             seq_num+=chunk;
     }

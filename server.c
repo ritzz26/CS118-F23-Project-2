@@ -75,6 +75,7 @@
 
             if((&rec_pkt)->seqnum == expected_seq_num){
                 expected_seq_num = (&rec_pkt)->seqnum + (&rec_pkt)->length;
+                fprintf(fp, (&rec_pkt)->payload);
             }
             build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
             if((&rec_pkt)->last==1){
