@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
 
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 500000;
+    timeout.tv_usec = 500000; //CHANGE TO lower??
 
     if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
         perror("Error setting receive timeout");
@@ -95,37 +95,62 @@ int main(int argc, char *argv[]) {
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
-    while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number        
+    int N = 2;
+    int ack_rec = 0;
+    int piped_pckts=0;
+    unsigned short sent_seq_num=0;
+    // struct packet* pkts_sent = malloc(N * sizeof(struct packet));
+    size_t bufferSize = sizeof(struct packet)*N;
+    struct packet* pkts_sent = (struct packet*)malloc(bufferSize);
+    while(!last && piped_pckts==0){
+        while(piped_pckts<N){
+            printf("here");
+            bytes_read = fread(buffer, 1, chunk, fp);
             if (feof(fp)) {
                 // End of file is reached, modify the packet type in the build_packet call
-                build_packet(&pkt, seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
+                // build_packet(&pkt, sent_seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
+                build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,1, 0, bytes_read, buffer);
+                last=1;
             }
             else{
-                build_packet(&pkt, seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
+                // build_packet(&pkt, sent_seq_num, sent_seq_num+chunk, 0, 0, bytes_read, buffer);
+                build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,0, 0, bytes_read, buffer);
             }
-            // printf("%s", pkt.payload);
-            // Send data to server
-            // printSend(&pkt, 0);
-            if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+            printf("here2");
+            printSend(&pkts_sent[piped_pckts], 0);
+            if (sendto(send_sockfd, &pkts_sent[piped_pckts], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 close(listen_sockfd);
                 close(send_sockfd);
                 return 1;
             }
-            // TODO: Implement acknowledgment handling and timeout logic here
-            while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-      //          
-                                    // printSend(&pkt, 1);
-                                    if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                                        perror("Error sending data");
-                                        close(listen_sockfd);
-                                        close(send_sockfd);
-                                        return 1;
-                                    }       
-                                }
+            printf("here4");
+            piped_pckts+=1;
+            sent_seq_num+=chunk;
+        }
+        while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
+            // printSend(&pkt, 1);
+            printf("eresend_loop");
+            //RESEND N
+            for (long unsigned int j =0; j<(bufferSize-1);j+=1){
+                if (sendto(send_sockfd, &pkts_sent[j], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                    perror("Error sending data");
+                    close(listen_sockfd);
+                    close(send_sockfd);
+                    return 1;
+                } 
+            }      
+        }
+        printf("before");
+        for (long unsigned int i = 0; i < bufferSize - 1; i+=1) {
+            pkts_sent[i] = pkts_sent[i + 1];
+        }
+        piped_pckts--;
+        printf("after");
             // Update sequence number for the next packet
-            seq_num+=chunk;
+        seq_num+=chunk;
     }
+    free(pkts_sent);
     fclose(fp);
     close(listen_sockfd);
     close(send_sockfd);
