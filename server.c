@@ -53,14 +53,8 @@
         client_addr_from.sin_addr.s_addr = inet_addr(LOCAL_HOST);
         client_addr_from.sin_port = htons(CLIENT_PORT);
 
-        // if (connect(listen_sockfd, (struct sockaddr *)&client_addr_from, addr_size) == -1) {
-        //     perror("connect failed");
-        //     return 1;
-        // }//WE DONT KNOW IF THIS SHOULD BE HERE
-
         // Open the target file for writing (always write to output.txt)
         FILE *fp = fopen("output.txt", "wb");
-        // TODO: Receive file from the client and save it as output.txt
         char last = 0;
         int chunk = PAYLOAD_SIZE;
         while (!last) {
@@ -78,6 +72,7 @@
                 rec_pkt.payload[(&rec_pkt)->length] = '\0';
                 fprintf(fp, "%s", rec_pkt.payload);
             }
+            //is this logic correct, it seems like acknum isnt changing in the terminal correctly
             build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
             if((&rec_pkt)->last==1){
                 last = 1;
@@ -88,7 +83,7 @@
                     close(send_sockfd);
                     return 1;
                 }
-                printSend(&ack_pkt, 0);
+            printSend(&ack_pkt, 0);
         }
 
         fclose(fp);

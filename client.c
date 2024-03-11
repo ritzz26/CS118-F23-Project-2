@@ -9,17 +9,27 @@
 #include <sys/select.h>
 
 // Check for incoming acknowledgments
-int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size) {
+int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, int chunk, int N) {
     struct packet temp;
+    unsigned short temp_seq = seq_num;
+    unsigned short chunk_temp = chunk+temp_seq;
     int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
     }
-    // Check for the sequence number/acknum
-    if((&temp)->ack == 1)
+    if((chunk_temp)==0){
+        temp_seq = 0;
+    }
+
+    if((temp.ack == 1) && (temp.acknum>=temp_seq))  // && (temp.acknum>=(seq_num+(N*chunk)))
+    {
         return 1;
+    }
     else
+    {
         return 0;
+    }
+    //is the check correct?
 }
 
 int main(int argc, char *argv[]) {
@@ -95,16 +105,15 @@ int main(int argc, char *argv[]) {
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
-    int N = 2;
+    int N = 4;
     int ack_rec = 0;
     int piped_pckts=0;
     unsigned short sent_seq_num=0;
     // struct packet* pkts_sent = malloc(N * sizeof(struct packet));
-    size_t bufferSize = sizeof(struct packet)*N;
+    size_t bufferSize = sizeof(struct packet)*(N+1);
     struct packet* pkts_sent = (struct packet*)malloc(bufferSize);
-    while(!last && piped_pckts==0){
+    while(!last || (piped_pckts!=0)){
         while(piped_pckts<N){
-            printf("here");
             bytes_read = fread(buffer, 1, chunk, fp);
             if (feof(fp)) {
                 // End of file is reached, modify the packet type in the build_packet call
@@ -116,24 +125,23 @@ int main(int argc, char *argv[]) {
                 // build_packet(&pkt, sent_seq_num, sent_seq_num+chunk, 0, 0, bytes_read, buffer);
                 build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,0, 0, bytes_read, buffer);
             }
-            printf("here2");
+
             printSend(&pkts_sent[piped_pckts], 0);
-            if (sendto(send_sockfd, &pkts_sent[piped_pckts], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+            if (sendto(send_sockfd, &pkts_sent[piped_pckts], sizeof(pkts_sent[piped_pckts]), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 close(listen_sockfd);
                 close(send_sockfd);
                 return 1;
             }
-            printf("here4");
             piped_pckts+=1;
             sent_seq_num+=chunk;
         }
-        while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-            // printSend(&pkt, 1);
-            printf("eresend_loop");
+        
+        while (!check_for_ack(pkts_sent[0].acknum, listen_sockfd, server_addr_from, addr_size, chunk, N)){
             //RESEND N
-            for (long unsigned int j =0; j<(bufferSize-1);j+=1){
-                if (sendto(send_sockfd, &pkts_sent[j], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+            for (int k=0; k<N;k+=1){
+                // printSend(&pkts_sent[k], 1);
+                if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                     perror("Error sending data");
                     close(listen_sockfd);
                     close(send_sockfd);
@@ -141,14 +149,11 @@ int main(int argc, char *argv[]) {
                 } 
             }      
         }
-        printf("before");
-        for (long unsigned int i = 0; i < bufferSize - 1; i+=1) {
+        for (int i = 0; i < N - 1; i+=1) {
+            // printSend(&pkts_sent[i], 1);
             pkts_sent[i] = pkts_sent[i + 1];
         }
         piped_pckts--;
-        printf("after");
-            // Update sequence number for the next packet
-        seq_num+=chunk;
     }
     free(pkts_sent);
     fclose(fp);
