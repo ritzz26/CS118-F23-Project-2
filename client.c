@@ -9,17 +9,20 @@
 #include <sys/select.h>
 
 // Check for incoming acknowledgments
-int check_for_ack(struct packet *ack_pkt, int seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size) {
+int check_for_ack(int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, unsigned short *acknumber) {
     struct packet temp;
     int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
     }
     // Check for the sequence number/acknum
-    if((&temp)->ack == 1)
+    if((&temp)->ack == 1) {
+        *acknumber = (&temp)->acknum;
         return 1;
-    else
+    }
+    else {
         return 0;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -84,47 +87,107 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000;
+    // struct timeval timeout;
+    // timeout.tv_sec = 0;
+    // timeout.tv_usec = 500000;
 
-    if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
-        perror("Error setting receive timeout");
-        return 1;
-    }
+    // if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+    //     perror("Error setting receive timeout");
+    //     return 1;
+    // }
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
-    while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number        
-            if (feof(fp)) {
-                // End of file is reached, modify the packet type in the build_packet call
-                build_packet(&pkt, seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
+    // int packets_sent_in_window = 0;
+    int start_times[WINDOW_SIZE];
+    char acked_packets[WINDOW_SIZE];
+    char sent_packets[WINDOW_SIZE];
+    struct packet packets[WINDOW_SIZE];
+    for (int i = 0; i < WINDOW_SIZE; i++) {
+        acked_packets[i] = 0;
+        sent_packets[i] = 0;
+        //packets[i] = build_packet();
+    }
+    // while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number
+    int index = 0;     
+    for (;;) { 
+            // TIMEOUT LOGIC: If the packet has been sent but has not been acked yet
+            if (sent_packets[index] == 1 && acked_packets[index] == 0) {
+                int time_now = time(NULL);
+                if (time_now - start_times[index] >= TIMEOUT) {
+                    if (sendto(send_sockfd, &packets[index], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                        perror("Error sending data");
+                        close(listen_sockfd);
+                        close(send_sockfd);
+                        return 1;
+                    }
+                    printSend(&packets[index], 1);
+                    start_times[index] = time(NULL);
+                }
+
             }
-            else{
-                build_packet(&pkt, seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
+            // SENDING PACKETS LOGIC: If the packet has not been sent yet
+            if (sent_packets[index] == 0) {
+                bytes_read = fread(buffer, 1, chunk, fp);
+                if (feof(fp)) {
+                    // End of file is reached, modify the packet type in the build_packet call
+                    build_packet(&packets[index], seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
+                }
+                else{
+                    build_packet(&packets[index], seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
+                    //packets[index] = pkt;
+                }
+                // printf("%s", pkt.payload);
+                // Send data to server
+                if (sendto(send_sockfd, &packets[index], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                    perror("Error sending data");
+                    close(listen_sockfd);
+                    close(send_sockfd);
+                    return 1;
+                }
+                printSend(&packets[index], 0);
+                sent_packets[index] = 1;
+                start_times[index] = time(NULL);
+                // sent_packets[packets_sent_in_window] = 1;
+                // packets_sent_in_window+=1;
+
+                // Update sequence number for the next packet
+                seq_num+=chunk;
             }
-            // printf("%s", pkt.payload);
-            // Send data to server
-            // printSend(&pkt, 0);
-            if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                perror("Error sending data");
-                close(listen_sockfd);
-                close(send_sockfd);
-                return 1;
+            index++;
+            if (index < WINDOW_SIZE) {
+                continue;
             }
-            // TODO: Implement acknowledgment handling and timeout logic here
-            while (!check_for_ack(&ack_pkt, seq_num, listen_sockfd, server_addr_from, addr_size)) {
-      //          
-                                    // printSend(&pkt, 1);
-                                    if (sendto(send_sockfd, &pkt, sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                                        perror("Error sending data");
-                                        close(listen_sockfd);
-                                        close(send_sockfd);
-                                        return 1;
-                                    }       
-                                }
-            // Update sequence number for the next packet
-            seq_num+=chunk;
+            
+            // ACK LOGIC: Checking for ACKs for unacknowledged packets
+
+            unsigned short acknumber;
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                if (acked_packets[i] == 0) {
+                    printf("yo");
+                    fflush(stdout);
+                    int returnval = check_for_ack(listen_sockfd, server_addr_from, addr_size, &acknumber);
+                    unsigned short correct_acknum = packets[i].seqnum;
+                    if (returnval == 1 && acknumber == correct_acknum) {
+                        acked_packets[i] = 1;
+                    }
+                }
+            }
+
+            // SLIDING WINDOW LOGIC: Slide the window appropriately based on already acked packets
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                if (acked_packets[i] == 1) {
+                    shift_left_packet(packets, WINDOW_SIZE);
+                    shift_left(sent_packets, WINDOW_SIZE);
+                    shift_left(acked_packets, WINDOW_SIZE);
+                    sent_packets[WINDOW_SIZE-1] = 0;
+                    acked_packets[WINDOW_SIZE-1] = 0;
+                    i--;
+                }
+                else {
+                    break;
+                }
+            }
     }
     fclose(fp);
     close(listen_sockfd);

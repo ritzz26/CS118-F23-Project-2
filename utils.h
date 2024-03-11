@@ -51,4 +51,38 @@ void printSend(struct packet* pkt, int resend) {
         printf("SEND %d %d%s%s\n", pkt->seqnum, pkt->acknum, pkt->last ? " LAST": "", pkt->ack ? " ACK": "");
 }
 
+void shift_left(char arr[], int size) {
+    // Shift each element one position to the left
+    for (int i = 0; i < size - 1; i++) {
+        arr[i] = arr[i + 1];
+    }
+}
+
+void shift_left_short(unsigned short arr[], int size) {
+    // Shift each element one position to the left
+    for (int i = 0; i < size - 1; i++) {
+        arr[i] = arr[i + 1];
+    }
+}
+
+void shift_left_packet(struct packet arr[], int size) {
+    // Shift each element one position to the left
+    for (int i = 0; i < size - 1; i++) {
+        arr[i] = arr[i + 1];
+    }
+}
+
+void shift_left_cstring(char *arr[], int size) {
+    for (int i = 0; i < size - 1; i++) {
+        strcpy(arr[i], arr[i+1]);
+    }
+}
+
+void shift_left_int(unsigned int arr[], int size) {
+    // Shift each element one position to the left
+    for (int i = 0; i < size - 1; i++) {
+        arr[i] = arr[i + 1];
+    }
+}
+
 #endif

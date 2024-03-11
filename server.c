@@ -63,6 +63,14 @@
         // TODO: Receive file from the client and save it as output.txt
         char last = 0;
         int chunk = PAYLOAD_SIZE;
+        // Initializing buffer with all the expected sequence numbers for the given window
+        unsigned short expected_seq[WINDOW_SIZE];
+        struct packet packets[WINDOW_SIZE];
+        int alreadySeen[WINDOW_SIZE];
+        for (int i = 0; i < WINDOW_SIZE; i++) {
+            expected_seq[i] = i * chunk;
+            alreadySeen[i] = 0;
+        }
         while (!last) {
             struct packet rec_pkt;
             
@@ -71,23 +79,69 @@
                 perror("failed to receive");
                 return 1;
             }
-            // printRecv(&rec_pkt);
+            printRecv(&rec_pkt);
+            // printf("%s%d\n", "Sequence Num: ",(&rec_pkt)->seqnum);
             // printf("%s", rec_pkt.payload);
-            if(rec_pkt.seqnum == expected_seq_num){
-                expected_seq_num = (&rec_pkt)->seqnum + (&rec_pkt)->length;
-                rec_pkt.payload[(&rec_pkt)->length] = '\0';
-                fprintf(fp, "%s", rec_pkt.payload);
+
+            // HANDLE ACKS FOR SEQUENCE NUMBERS IN WINDOW NOT SEEN YET
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                printf("%d\n", expected_seq[i]);
+                fflush(stdout);
+                if (!alreadySeen[i]) {
+                    if (rec_pkt.seqnum == expected_seq[i]) {
+                        alreadySeen[i] = 1;
+                        //strcpy(payloads[i], rec_pkt.payload);
+                        build_packet(&packets[i], rec_pkt.seqnum, rec_pkt.seqnum, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+                        packets[i].payload[(&rec_pkt)->length] = '\0';
+                        build_packet(&ack_pkt, (&rec_pkt)->seqnum, (&rec_pkt)->seqnum, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+                        if((&rec_pkt)->last==1){
+                            last = 1;
+                        }
+                        if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
+                            perror("Error sending ack");
+                            close(listen_sockfd);
+                            close(send_sockfd);
+                            return 1;
+                        }
+                        printSend(&ack_pkt, 0);
+                    }
+                } 
             }
-            build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
-            if((&rec_pkt)->last==1){
-                last = 1;
-            }
-            if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
-                    perror("Error sending ack");
-                    close(listen_sockfd);
-                    close(send_sockfd);
-                    return 1;
+            // HANDLE SLIDING WINDOW
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                if (alreadySeen[i] == 1) {
+                    shift_left_int(alreadySeen, WINDOW_SIZE);
+                    fprintf(fp, "%s", packets[i].payload); 
+                    shift_left_packet(packets, WINDOW_SIZE);
+                    shift_left_short(expected_seq, WINDOW_SIZE);
+                    expected_seq[WINDOW_SIZE-1] = expected_seq[WINDOW_SIZE-2] + chunk;
+                    i--;
                 }
+                else {
+                    break;
+                }
+            }
+            // // ADDITIONAL LOGIC TO FIX LAST
+            // if (last == 1) {
+            //     for (int i = 0; i < WINDOW_SIZE; i++) {
+                    
+            //     }
+            // }
+            // if(rec_pkt.seqnum == expected_seq_num){
+            //     expected_seq_num = (&rec_pkt)->seqnum + (&rec_pkt)->length;
+            //     rec_pkt.payload[(&rec_pkt)->length] = '\0';
+            //     fprintf(fp, "%s", rec_pkt.payload);
+            // }
+            // build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+            // if((&rec_pkt)->last==1){
+            //     last = 1;
+            // }
+            // if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
+            //         perror("Error sending ack");
+            //         close(listen_sockfd);
+            //         close(send_sockfd);
+            //         return 1;
+            //     }
                 // printSend(&ack_pkt, 0);
         }
 
