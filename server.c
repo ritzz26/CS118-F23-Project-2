@@ -54,9 +54,9 @@
         // Open the target file for writing (always write to output.txt)
         FILE *fp = fopen("output.txt", "wb");
         char last = 0;
+        unsigned short CHUNK = PAYLOAD_SIZE;
         while (!last) {
             struct packet rec_pkt;
-            
             int bytes_read = recvfrom(listen_sockfd, &rec_pkt, sizeof(struct packet), 0,  (struct sockaddr *)&server_addr, &addr_size);
             if (bytes_read <= 0) {
                 perror("failed to receive");
@@ -64,12 +64,12 @@
             }
             // printRecv(&rec_pkt);
             // printf("%s", rec_pkt.payload);
+            
             if(rec_pkt.seqnum == expected_seq_num){
-                expected_seq_num = (&rec_pkt)->seqnum + (&rec_pkt)->length;
+                expected_seq_num = (&rec_pkt)->seqnum + CHUNK;
                 rec_pkt.payload[(&rec_pkt)->length] = '\0';
                 fprintf(fp, "%s", rec_pkt.payload);
             }
-            
             if((&rec_pkt)->last==1){
                 last = 1;
                 build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 1, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
