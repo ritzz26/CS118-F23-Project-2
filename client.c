@@ -15,6 +15,7 @@ int check_for_ack(int listen_sockfd, struct sockaddr_in server_addr_to, socklen_
     if (bytes_read<0){
         return 0;
     }
+    printRecv(&temp);
     // Check for the sequence number/acknum
     if((&temp)->ack == 1) {
         *acknumber = (&temp)->acknum;
@@ -87,14 +88,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // struct timeval timeout;
-    // timeout.tv_sec = 0;
-    // timeout.tv_usec = 500000;
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 500000;
 
-    // if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
-    //     perror("Error setting receive timeout");
-    //     return 1;
-    // }
+    if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+        perror("Error setting receive timeout");
+        return 1;
+    }
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
@@ -109,8 +110,12 @@ int main(int argc, char *argv[]) {
         //packets[i] = build_packet();
     }
     // while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number
-    int index = 0;     
-    for (;;) { 
+    //int index = 0;
+    for (;;) {     
+    for (int index = 0; index < WINDOW_SIZE+1; index++) {
+            // for (int i = 0; i < WINDOW_SIZE; i++) {
+            //     printf("%d", packets[i].seqnum);
+            // } 
             // TIMEOUT LOGIC: If the packet has been sent but has not been acked yet
             if (sent_packets[index] == 1 && acked_packets[index] == 0) {
                 int time_now = time(NULL);
@@ -134,7 +139,9 @@ int main(int argc, char *argv[]) {
                     build_packet(&packets[index], seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
                 }
                 else{
+                    printf("%d\n", seq_num);
                     build_packet(&packets[index], seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
+                    // printf("%d", packets[index].seqnum);
                     //packets[index] = pkt;
                 }
                 // printf("%s", pkt.payload);
@@ -154,19 +161,19 @@ int main(int argc, char *argv[]) {
                 // Update sequence number for the next packet
                 seq_num+=chunk;
             }
-            index++;
-            if (index < WINDOW_SIZE) {
+            //index++;
+            if (index < WINDOW_SIZE-1) {
                 continue;
             }
-            
+            for (int i = 0; i < WINDOW_SIZE; i++) {
+                printf("%d\n", packets[i].seqnum);
+                printf("%d\n", acked_packets[i]);
+            } 
             // ACK LOGIC: Checking for ACKs for unacknowledged packets
-
             unsigned short acknumber;
+            int returnval = check_for_ack(listen_sockfd, server_addr_from, addr_size, &acknumber);
             for (int i = 0; i < WINDOW_SIZE; i++) {
                 if (acked_packets[i] == 0) {
-                    printf("yo");
-                    fflush(stdout);
-                    int returnval = check_for_ack(listen_sockfd, server_addr_from, addr_size, &acknumber);
                     unsigned short correct_acknum = packets[i].seqnum;
                     if (returnval == 1 && acknumber == correct_acknum) {
                         acked_packets[i] = 1;
@@ -185,9 +192,11 @@ int main(int argc, char *argv[]) {
                     i--;
                 }
                 else {
+                    printf("broke out of loop");
                     break;
                 }
             }
+    }
     }
     fclose(fp);
     close(listen_sockfd);

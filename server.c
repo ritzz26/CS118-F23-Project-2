@@ -109,12 +109,14 @@
             }
             // HANDLE SLIDING WINDOW
             for (int i = 0; i < WINDOW_SIZE; i++) {
+                printf("%d", alreadySeen[i]);
                 if (alreadySeen[i] == 1) {
                     shift_left_int(alreadySeen, WINDOW_SIZE);
                     fprintf(fp, "%s", packets[i].payload); 
                     shift_left_packet(packets, WINDOW_SIZE);
                     shift_left_short(expected_seq, WINDOW_SIZE);
                     expected_seq[WINDOW_SIZE-1] = expected_seq[WINDOW_SIZE-2] + chunk;
+                    alreadySeen[WINDOW_SIZE-1] = 0;
                     i--;
                 }
                 else {
