@@ -8,28 +8,47 @@
 #include "utils.h"
 #include <sys/select.h>
 
+double base_rtt = 0.1;
+double resend_timeout;
+int cwnd = 1;
+int thresh = 1;
+int last_sent_seq = 0;
+char last = 0;
+
 // Check for incoming acknowledgments
 int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, int chunk, int N) {
     struct packet temp;
     unsigned short temp_seq = seq_num;
-    unsigned short chunk_temp = chunk+temp_seq;
     int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
     }
-    if((chunk_temp)==0){
-        temp_seq = 0;
-    }
+    if(temp.last==1){
+            last = 1;
+            return 1;
+        }
 
-    if((temp.ack == 1) && (temp.acknum>=temp_seq))  // && (temp.acknum>=(seq_num+(N*chunk)))
+    if((temp.ack == 1) && ((temp.acknum>=temp_seq)||((temp.acknum==0)&&(temp.seqnum==64512))))
     {
-        return 1;
+        int temp_val = temp.acknum;
+        if(((temp.acknum==0)&&(temp.seqnum==64512))){
+            temp_val = 65536;
+        }
+        last_sent_seq = temp.acknum;
+        if (cwnd < thresh) {
+            cwnd += 1;
+        } else {
+            cwnd = 0.5*cwnd;
+            if(cwnd<=1){
+                cwnd=2;
+            }
+        }
+        return temp_val;
     }
     else
     {
         return 0;
     }
-    //is the check correct?
 }
 
 int main(int argc, char *argv[]) {
@@ -105,52 +124,65 @@ int main(int argc, char *argv[]) {
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
-    int N = 4;
+    int N;
     int ack_rec = 0;
     int piped_pckts=0;
     unsigned short sent_seq_num=0;
+    resend_timeout = base_rtt * (1 + base_rtt);
     // struct packet* pkts_sent = malloc(N * sizeof(struct packet));
-    size_t bufferSize = sizeof(struct packet)*(N+1);
-    struct packet* pkts_sent = (struct packet*)malloc(bufferSize);
-    while(!last || (piped_pckts!=0)){
+    size_t bufferSize = sizeof(struct packet);
+    struct packet* pkts_sent = (struct packet*)malloc(bufferSize*10);
+    while(!last){
+        N=cwnd;
         while(piped_pckts<N){
             bytes_read = fread(buffer, 1, chunk, fp);
             if (feof(fp)) {
-                // End of file is reached, modify the packet type in the build_packet call
-                // build_packet(&pkt, sent_seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
                 build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,1, 0, bytes_read, buffer);
-                last=1;
             }
             else{
-                // build_packet(&pkt, sent_seq_num, sent_seq_num+chunk, 0, 0, bytes_read, buffer);
                 build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,0, 0, bytes_read, buffer);
             }
-
-            printSend(&pkts_sent[piped_pckts], 0);
+            // usleep(100000);
+            // printSend(&pkts_sent[piped_pckts], 0);
             if (sendto(send_sockfd, &pkts_sent[piped_pckts], sizeof(pkts_sent[piped_pckts]), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 close(listen_sockfd);
                 close(send_sockfd);
                 return 1;
             }
+            last_sent_seq = sent_seq_num;
+            cwnd = 1;
+
             piped_pckts+=1;
             sent_seq_num+=chunk;
         }
-        
-        while (!check_for_ack(pkts_sent[0].acknum, listen_sockfd, server_addr_from, addr_size, chunk, N)){
-            //RESEND N
-            for (int k=0; k<N;k+=1){
-                // printSend(&pkts_sent[k], 1);
-                if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                    perror("Error sending data");
-                    close(listen_sockfd);
-                    close(send_sockfd);
-                    return 1;
-                } 
-            }      
+        int ack_rec = 0;
+        // !check_for_ack(pkts_sent[0].acknum, listen_sockfd, server_addr_from, addr_size, chunk, N);
+        while (!ack_rec && piped_pckts>0){
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(listen_sockfd, &readfds);
+            struct timeval timeout;
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 100000;
+            int ret = select(listen_sockfd + 1, &readfds, NULL, NULL, &timeout);
+            if (ret > 0 && FD_ISSET(listen_sockfd, &readfds)) {
+                ack_rec = check_for_ack(last_sent_seq, listen_sockfd, server_addr_from, addr_size, chunk, N);
+                last = ack_rec;
+            } else if (ret == 0) {
+                // Retransmit all unacknowledged packets
+                for (int k=0; k<piped_pckts; k+=1) {
+                    printSend(&pkts_sent[k], 1);
+                    if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
+                        perror("Error sending data");
+                        close(listen_sockfd);
+                        close(send_sockfd);
+                        return 1;
+                    } 
+                }
+            }     
         }
         for (int i = 0; i < N - 1; i+=1) {
-            // printSend(&pkts_sent[i], 1);
             pkts_sent[i] = pkts_sent[i + 1];
         }
         piped_pckts--;

@@ -9,10 +9,8 @@
     int main() {
         int listen_sockfd, send_sockfd;
         struct sockaddr_in server_addr, client_addr_from, client_addr_to;
-        struct packet buffer;
         socklen_t addr_size = sizeof(client_addr_from);
         unsigned short expected_seq_num = 0;
-        int recv_len;
         struct packet ack_pkt;
 
         // Create a UDP socket for sending
@@ -56,7 +54,6 @@
         // Open the target file for writing (always write to output.txt)
         FILE *fp = fopen("output.txt", "wb");
         char last = 0;
-        int chunk = PAYLOAD_SIZE;
         while (!last) {
             struct packet rec_pkt;
             
@@ -72,10 +69,13 @@
                 rec_pkt.payload[(&rec_pkt)->length] = '\0';
                 fprintf(fp, "%s", rec_pkt.payload);
             }
-            //is this logic correct, it seems like acknum isnt changing in the terminal correctly
-            build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+            
             if((&rec_pkt)->last==1){
                 last = 1;
+                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 1, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+            }
+            else{
+                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
             }
             if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
                     perror("Error sending ack");
