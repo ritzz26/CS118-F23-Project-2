@@ -27,7 +27,7 @@ int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in 
             return 1;
         }
 
-    if((temp.ack == 1) && ((temp.acknum>=temp_seq)||((temp.acknum==0)&&(temp.seqnum==64512))))
+    if((temp.ack == 1) && ((temp.acknum>=temp_seq)||((temp.acknum==0)&&(temp_seq==64512))))
     {
         int temp_val = temp.acknum;
         if(((temp.acknum==0)&&(temp.seqnum==64512))){
