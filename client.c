@@ -36,15 +36,7 @@ int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in 
             temp_val = 1;
         }
         last_sent_seq = temp.acknum;
-        // if (cwnd < thresh) {
-        //     cwnd += 1;
-        // } else {
-        //     cwnd = 0.5*cwnd;
-        //     if(cwnd<=1){
-        //         cwnd=2;
-        //     }
-        // }
-        cwnd+=1;
+        cwnd=cwnd+(1/cwnd);
         return temp_val;
     }
     else
@@ -153,7 +145,6 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             last_sent_seq = sent_seq_num;
-            cwnd = 1;
 
             piped_pckts+=1;
             sent_seq_num+=chunk;
@@ -161,6 +152,7 @@ int main(int argc, char *argv[]) {
         int ack_rec = 0;
         // !check_for_ack(pkts_sent[0].acknum, listen_sockfd, server_addr_from, addr_size, chunk, N);
         while (!ack_rec && piped_pckts>0 && !last){
+            // cwnd/=2;
             fd_set readfds;
             FD_ZERO(&readfds);
             FD_SET(listen_sockfd, &readfds);
@@ -182,6 +174,10 @@ int main(int argc, char *argv[]) {
                         close(send_sockfd);
                         return 1;
                     } 
+                }
+                cwnd /=2;
+                if(cwnd<1){
+                    cwnd=1;
                 }
             }     
         }
