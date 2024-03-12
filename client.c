@@ -4,204 +4,117 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
-#include "utils.h"
-#include <sys/select.h>
+#define SERVER_PORT 12345
+#define SERVER_IP "127.0.0.1"
+#define CLIENT_PORT 54321
+#define TIMEOUT_SEC 2
+#define MAX_PACKET_SIZE 1024
+#define MAX_SEQ_NUM 256
+#define WINDOW_SIZE 4
 
-// Check for incoming acknowledgments
-int check_for_ack(int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, unsigned short *acknumber) {
-    struct packet temp;
-    int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
-    if (bytes_read<0){
-        return 0;
+struct packet {
+    int seq_num;
+    char data[MAX_PACKET_SIZE];
+    int len; // Actual data length
+    int ack;
+};
+
+int sockfd;
+struct sockaddr_in servaddr, cliaddr;
+
+void error(const char *msg) {
+    perror(msg);
+    exit(1);
+}
+
+void set_socket_timeout(int sockfd, long sec) {
+    struct timeval tv;
+    tv.tv_sec = sec;
+    tv.tv_usec = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+        error("Error setting socket timeout");
     }
-    printRecv(&temp);
-    // Check for the sequence number/acknum
-    if((&temp)->ack == 1) {
-        *acknumber = (&temp)->acknum;
-        return 1;
+}
+
+void send_packet(struct packet *pkt) {
+    if (sendto(sockfd, pkt, sizeof(*pkt), 0, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        error("sendto");
     }
-    else {
-        return 0;
+}
+
+int wait_for_ack(int expected_seq) {
+    struct packet ack_pkt;
+    unsigned int len = sizeof(cliaddr);
+    while (1) {
+        if (recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, (struct sockaddr *)&cliaddr, &len) < 0) {
+            // Timeout occurred
+            return 0;
+        }
+        if (ack_pkt.ack == 1 && ack_pkt.seq_num == expected_seq) {
+            return 1;
+        }
     }
 }
 
 int main(int argc, char *argv[]) {
-    int listen_sockfd, send_sockfd;
-    struct sockaddr_in client_addr, server_addr_to, server_addr_from;
-    socklen_t addr_size = sizeof(server_addr_to);
-    // struct timeval tv;
-    struct packet pkt;
-    struct packet ack_pkt;
-    char buffer[PAYLOAD_SIZE];
-    unsigned short seq_num = 0;
-    unsigned short ack_num = 0;
-    char last = 0;
-    char ack = 0;
-
-    // read filename from command line argument
     if (argc != 2) {
-        printf("Usage: ./client <filename>\n");
-        return 1;
-    }
-    char *filename = argv[1];
-
-    // Create a UDP socket for listening
-    listen_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (listen_sockfd < 0) {
-        perror("Could not create listen socket");
-        return 1;
+        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+        exit(1);
     }
 
-    // Create a UDP socket for sending
-    send_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (send_sockfd < 0) {
-        perror("Could not create send socket");
-        return 1;
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) error("Socket creation failed");
+
+    memset(&servaddr, 0, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(SERVER_PORT);
+    servaddr.sin_addr.s_addr = inet_addr(SERVER_IP);
+
+    memset(&cliaddr, 0, sizeof(cliaddr));
+    cliaddr.sin_family = AF_INET;
+    cliaddr.sin_port = htons(CLIENT_PORT);
+    cliaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(sockfd, (const struct sockaddr *)&cliaddr, sizeof(cliaddr)) < 0) error("Bind failed");
+
+    set_socket_timeout(sockfd, TIMEOUT_SEC);
+
+    // Remove the redundant file opening code here
+
+    // Correct place for the sleep, just before starting to send the file
+    sleep(1); // Sleep for 1 second to ensure readiness
+
+    // Open the file a single time before the sending loop
+    FILE *file = fopen(argv[1], "rb");
+    if (!file) error("Failed to open file");
+
+    int seq_num = 0;
+    ssize_t read_bytes;
+    char file_buffer[MAX_PACKET_SIZE];
+    struct packet pkt;
+
+    while ((read_bytes = fread(file_buffer, 1, MAX_PACKET_SIZE, file)) > 0) {
+        pkt.seq_num = seq_num;
+        memcpy(pkt.data, file_buffer, read_bytes);
+        pkt.len = read_bytes;
+        pkt.ack = 0;
+
+        send_packet(&pkt);
+        if (!wait_for_ack(seq_num)) {
+            printf("Timeout, resending packet %d\n", seq_num);
+            send_packet(&pkt); // Resend the same packet
+        } else {
+            printf("ACK received for packet %d\n", seq_num);
+        }
+        seq_num = (seq_num + 1) % MAX_SEQ_NUM; // Simple sequence number increment
     }
 
-    // Configure the server address structure to which we will send data
-    memset(&server_addr_to, 0, sizeof(server_addr_to));
-    server_addr_to.sin_family = AF_INET;
-    server_addr_to.sin_port = htons(SERVER_PORT_TO);
-    server_addr_to.sin_addr.s_addr = inet_addr(SERVER_IP);
-
-    // Configure the client address structure
-    memset(&client_addr, 0, sizeof(client_addr));
-    client_addr.sin_family = AF_INET;
-    client_addr.sin_port = htons(CLIENT_PORT);
-    client_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    // Bind the listen socket to the client address
-    if (bind(listen_sockfd, (struct sockaddr *)&client_addr, sizeof(client_addr)) < 0) {
-        perror("Bind failed");
-        close(listen_sockfd);
-        return 1;
-    }
-
-    // Open file for reading
-    FILE *fp = fopen(filename, "rb");
-    if (fp == NULL) {
-        perror("Error opening file");
-        close(listen_sockfd);
-        close(send_sockfd);
-        return 1;
-    }
-
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000;
-
-    if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
-        perror("Error setting receive timeout");
-        return 1;
-    }
-
-    int bytes_read;
-    int chunk = PAYLOAD_SIZE;
-    // int packets_sent_in_window = 0;
-    int start_times[WINDOW_SIZE];
-    char acked_packets[WINDOW_SIZE];
-    char sent_packets[WINDOW_SIZE];
-    struct packet packets[WINDOW_SIZE];
-    for (int i = 0; i < WINDOW_SIZE; i++) {
-        acked_packets[i] = 0;
-        sent_packets[i] = 0;
-        //packets[i] = build_packet();
-    }
-    // while((bytes_read = fread(buffer, 1, chunk, fp))>0) { //is payload_size the best number
-    //int index = 0;
-    for (;;) {     
-    for (int index = 0; index < WINDOW_SIZE+1; index++) {
-            // for (int i = 0; i < WINDOW_SIZE; i++) {
-            //     printf("%d", packets[i].seqnum);
-            // } 
-            // TIMEOUT LOGIC: If the packet has been sent but has not been acked yet
-            if (sent_packets[index] == 1 && acked_packets[index] == 0) {
-                int time_now = time(NULL);
-                if (time_now - start_times[index] >= TIMEOUT) {
-                    if (sendto(send_sockfd, &packets[index], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                        perror("Error sending data");
-                        close(listen_sockfd);
-                        close(send_sockfd);
-                        return 1;
-                    }
-                    printSend(&packets[index], 1);
-                    start_times[index] = time(NULL);
-                }
-
-            }
-            // SENDING PACKETS LOGIC: If the packet has not been sent yet
-            if (sent_packets[index] == 0) {
-                bytes_read = fread(buffer, 1, chunk, fp);
-                if (feof(fp)) {
-                    // End of file is reached, modify the packet type in the build_packet call
-                    build_packet(&packets[index], seq_num, seq_num+bytes_read, 1, 0, bytes_read, buffer);
-                }
-                else{
-                    printf("%d\n", seq_num);
-                    build_packet(&packets[index], seq_num, seq_num+chunk, 0, 0, bytes_read, buffer);
-                    // printf("%d", packets[index].seqnum);
-                    //packets[index] = pkt;
-                }
-                // printf("%s", pkt.payload);
-                // Send data to server
-                if (sendto(send_sockfd, &packets[index], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
-                    perror("Error sending data");
-                    close(listen_sockfd);
-                    close(send_sockfd);
-                    return 1;
-                }
-                printSend(&packets[index], 0);
-                sent_packets[index] = 1;
-                start_times[index] = time(NULL);
-                // sent_packets[packets_sent_in_window] = 1;
-                // packets_sent_in_window+=1;
-
-                // Update sequence number for the next packet
-                seq_num+=chunk;
-            }
-            //index++;
-            if (index < WINDOW_SIZE-1) {
-                continue;
-            }
-            for (int i = 0; i < WINDOW_SIZE; i++) {
-                printf("%d\n", packets[i].seqnum);
-                printf("%d\n", acked_packets[i]);
-            } 
-            // ACK LOGIC: Checking for ACKs for unacknowledged packets
-            unsigned short acknumber;
-            int returnval = check_for_ack(listen_sockfd, server_addr_from, addr_size, &acknumber);
-            for (int i = 0; i < WINDOW_SIZE; i++) {
-                if (acked_packets[i] == 0) {
-                    unsigned short correct_acknum = packets[i].seqnum;
-                    if (returnval == 1 && acknumber == correct_acknum) {
-                        acked_packets[i] = 1;
-                    }
-                }
-            }
-
-            // SLIDING WINDOW LOGIC: Slide the window appropriately based on already acked packets
-            for (int i = 0; i < WINDOW_SIZE; i++) {
-                if (acked_packets[i] == 1) {
-                    shift_left_packet(packets, WINDOW_SIZE);
-                    shift_left(sent_packets, WINDOW_SIZE);
-                    shift_left(acked_packets, WINDOW_SIZE);
-                    sent_packets[WINDOW_SIZE-1] = 0;
-                    acked_packets[WINDOW_SIZE-1] = 0;
-                    i--;
-                }
-                else {
-                    printf("broke out of loop");
-                    break;
-                }
-            }
-    }
-    }
-    fclose(fp);
-    close(listen_sockfd);
-    close(send_sockfd);
+    fclose(file);
+    close(sockfd);
     return 0;
 }
-
-
