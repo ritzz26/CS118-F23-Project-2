@@ -7,10 +7,10 @@ Client.c
 - ack handling:
     - as long as there are packets to be sent and  no packet has been acknowledged, resend the packets in the window of size N (cwnd)
     - there is handling of the sequence number overflow and the last that is set by the server is read to handle the last acknowledgement
-    - cwnd is increased by one if cwnd is less that 1 and decreased to half otherwise. However, because of the way we are handling our buffer, N has to be >=2 and therefore we have set it to 2. 
--timeout is set to 100 ms 
 - each time an ack is received, the packet buffer window is moved one forward by deleting the first element.
 - setsockopt is used to set a timeout to wait for an acknowledgement in the socket
+- cwnd is set to 1 initially and it increases by 1/cwnd each time it receives an ack
+- each time a packet has to be resent because of a lack of an ack, it is halved
 
 Server.c 
 

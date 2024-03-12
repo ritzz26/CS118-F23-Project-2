@@ -8,8 +8,8 @@
 #include "utils.h"
 #include <sys/select.h>
 
-double base_rtt = 0.1;
-double resend_timeout;
+// double base_rtt = 0.1;
+// double resend_timeout;
 int cwnd = 1;
 int thresh = 1;
 unsigned short last_sent_seq = 0;
@@ -106,14 +106,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000; //CHANGE TO lower??
+    // struct timeval timeout;
+    // timeout.tv_sec = 0;
+    // timeout.tv_usec = 500000; //CHANGE TO lower??
 
-    if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
-        perror("Error setting receive timeout");
-        return 1;
-    }
+    // if (setsockopt(listen_sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout)) < 0) {
+    //     perror("Error setting receive timeout");
+    //     return 1;
+    // }
 
     int bytes_read;
     int chunk = PAYLOAD_SIZE;
@@ -121,7 +121,7 @@ int main(int argc, char *argv[]) {
     int ack_rec = 0;
     int piped_pckts=0;
     unsigned short sent_seq_num=0;
-    resend_timeout = base_rtt * (1 + base_rtt);
+    // resend_timeout = base_rtt * (1 + base_rtt);
     // struct packet* pkts_sent = malloc(N * sizeof(struct packet));
     size_t bufferSize = sizeof(struct packet);
     struct packet* pkts_sent = (struct packet*)malloc(bufferSize*10);
@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
                 // Retransmit all unacknowledged packets
                 for (int k=0; k<piped_pckts; k+=1) {
                     printSend(&pkts_sent[k], 1);
-                    usleep(10000);
+                    // usleep(10000);
                     if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                         perror("Error sending data");
                         close(listen_sockfd);
