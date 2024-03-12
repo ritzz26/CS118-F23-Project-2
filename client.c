@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
                 build_packet(&pkts_sent[piped_pckts], sent_seq_num, sent_seq_num+chunk,0, 0, bytes_read, buffer);
             }
             // usleep(100000);
-            printSend(&pkts_sent[piped_pckts], 0);
+            // printSend(&pkts_sent[piped_pckts], 0);
             if (sendto(send_sockfd, &pkts_sent[piped_pckts], sizeof(pkts_sent[piped_pckts]), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                 perror("Error sending data");
                 close(listen_sockfd);
@@ -150,7 +150,6 @@ int main(int argc, char *argv[]) {
             sent_seq_num+=chunk;
         }
         int ack_rec = 0;
-        // !check_for_ack(pkts_sent[0].acknum, listen_sockfd, server_addr_from, addr_size, chunk, N);
         while (!ack_rec && piped_pckts>0 && !last){
             // cwnd/=2;
             fd_set readfds;
@@ -166,8 +165,8 @@ int main(int argc, char *argv[]) {
             } else if (ret == 0) {
                 // Retransmit all unacknowledged packets
                 for (int k=0; k<piped_pckts; k+=1) {
-                    printSend(&pkts_sent[k], 1);
-                    // usleep(100000);
+                    // printSend(&pkts_sent[k], 1);
+                    usleep(10000);
                     if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                         perror("Error sending data");
                         close(listen_sockfd);

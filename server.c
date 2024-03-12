@@ -83,7 +83,7 @@
                     close(send_sockfd);
                     return 1;
                 }
-            printSend(&ack_pkt, 0);
+            // printSend(&ack_pkt, 0);
         }
 
         fclose(fp);
