@@ -166,7 +166,7 @@ int main(int argc, char *argv[]) {
             FD_SET(listen_sockfd, &readfds);
             struct timeval timeout;
             timeout.tv_sec = 0;
-            timeout.tv_usec = 20000;
+            timeout.tv_usec = 0;
             int ret = select(listen_sockfd + 1, &readfds, NULL, NULL, &timeout);
             if (ret > 0 && FD_ISSET(listen_sockfd, &readfds)) {
                 ack_rec = check_for_ack(last_sent_seq, listen_sockfd, server_addr_from, addr_size, chunk, N);
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
                 // Retransmit all unacknowledged packets
                 for (int k=0; k<piped_pckts; k+=1) {
                     printSend(&pkts_sent[k], 1);
-                    // usleep(100000);
+                    usleep(100000);
                     if (sendto(send_sockfd, &pkts_sent[k], sizeof(struct packet), 0,(struct sockaddr *) &server_addr_to, addr_size) < 0) {
                         perror("Error sending data");
                         close(listen_sockfd);
