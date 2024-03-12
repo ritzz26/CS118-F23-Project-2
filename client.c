@@ -17,7 +17,7 @@ char last = 0;
 
 int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, int chunk, int N) {
     struct packet temp;
-    unsigned short temp_seq = seq_num;
+    unsigned short temp_seq = seq_num + PAYLOAD_SIZE;
     int bytes_read = recvfrom(listen_sockfd, &temp, sizeof(struct packet), 0, (struct sockaddr *)&server_addr_to, &addr_size);
     if (bytes_read<0){
         return 0;
@@ -27,10 +27,12 @@ int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in 
             return 1;
         }
 
-    if((temp.ack == 1) && ((temp.acknum>=temp_seq)||((temp.acknum==0)&&(temp_seq==64512))))
+    // if((temp.ack == 1) && ((temp.acknum==temp_seq)||((temp.acknum==0)&&(temp_seq==64512))))
+    if((temp.ack == 1) && ((temp.acknum==temp_seq)))
     {
         int temp_val = temp.acknum;
-        if(((temp.acknum==0)&&(temp.seqnum==64512))){
+        // if(((temp.acknum==0)&&(temp.seqnum==64512))){
+        if (temp.acknum==0) {
             temp_val = 1;
         }
         last_sent_seq = temp.acknum;
@@ -164,7 +166,7 @@ int main(int argc, char *argv[]) {
             FD_SET(listen_sockfd, &readfds);
             struct timeval timeout;
             timeout.tv_sec = 0;
-            timeout.tv_usec = 500000;
+            timeout.tv_usec = 200000;
             int ret = select(listen_sockfd + 1, &readfds, NULL, NULL, &timeout);
             if (ret > 0 && FD_ISSET(listen_sockfd, &readfds)) {
                 ack_rec = check_for_ack(last_sent_seq, listen_sockfd, server_addr_from, addr_size, chunk, N);
