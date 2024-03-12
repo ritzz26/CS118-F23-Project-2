@@ -36,7 +36,9 @@ void build_packet(struct packet* pkt, unsigned short seqnum, unsigned short ackn
     pkt->ack = ack;
     pkt->last = last;
     pkt->length = length;
-    memcpy(pkt->payload, payload, length);
+    if (!ack) {
+        memcpy(pkt->payload, payload, length);
+    }
 }
 
 // Utility function to print a packet

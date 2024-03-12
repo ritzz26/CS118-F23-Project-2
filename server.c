@@ -72,10 +72,10 @@
             }
             if((&rec_pkt)->last==1){
                 last = 1;
-                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 1, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 1, 1, (&rec_pkt)->length, "");
             }
             else{
-                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, (&rec_pkt)->payload);
+                build_packet(&ack_pkt, (&rec_pkt)->seqnum, expected_seq_num, 0, 1, (&rec_pkt)->length, "");
             }
             if (sendto(send_sockfd, &ack_pkt, sizeof(struct packet), 0,(struct sockaddr *) &client_addr_to, addr_size) < 0) {
                     perror("Error sending ack");
