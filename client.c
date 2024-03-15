@@ -7,6 +7,7 @@
 
 #include "utils.h"
 #include <sys/select.h>
+ 
 
 // double base_rtt = 0.1;
 // double resend_timeout;
@@ -14,6 +15,8 @@ int cwnd = 1;
 int thresh = 1;
 unsigned short last_sent_seq = 0;
 char last = 0;
+struct packet pkts_sent[100];
+int piped_pckts=0;
 
 int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in server_addr_to, socklen_t addr_size, int chunk, int N) {
     struct packet temp;
@@ -28,6 +31,7 @@ int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in 
         }
 
     // if((temp.ack == 1) && ((temp.acknum==temp_seq)||((temp.acknum==0)&&(temp_seq==64512))))
+    //if((temp.ack == 1) && ((temp.acknum>0 && (temp.acknum==temp_seq))||(temp.acknum==0 && (temp.acknum<=temp_seq))))
     if((temp.ack == 1) && ((temp.acknum==temp_seq)))
     {
         int temp_val = temp.acknum;
@@ -37,6 +41,13 @@ int check_for_ack(unsigned short seq_num, int listen_sockfd, struct sockaddr_in 
         }
         last_sent_seq = temp.acknum;
         cwnd=cwnd+(1/cwnd);
+        int i = 0;
+        while (i < piped_pckts && ((pkts_sent[i].seqnum < temp.acknum))) {//||(pkts_sent[i].seqnum==64512 && (pkts_sent[i].seqnum > temp.acknum)))
+            i++;
+        }
+        //handle eof;
+        memmove(pkts_sent, pkts_sent + i, (piped_pckts - i) * sizeof(struct packet));
+        piped_pckts -= i;
         return temp_val;
     }
     else
@@ -119,7 +130,7 @@ int main(int argc, char *argv[]) {
     int chunk = PAYLOAD_SIZE;
     int N;
     int ack_rec = 0;
-    int piped_pckts=0;
+    // int piped_pckts=0;
     unsigned short sent_seq_num=0;
     // resend_timeout = base_rtt * (1 + base_rtt);
     // struct packet* pkts_sent = malloc(N * sizeof(struct packet));
@@ -149,7 +160,7 @@ int main(int argc, char *argv[]) {
             piped_pckts+=1;
             sent_seq_num+=chunk;
         }
-        int ack_rec = 0;
+        ack_rec = 0;
         while (!ack_rec && piped_pckts>0 && !last){
             // cwnd/=2;
             fd_set readfds;
@@ -157,7 +168,7 @@ int main(int argc, char *argv[]) {
             FD_SET(listen_sockfd, &readfds);
             struct timeval timeout;
             timeout.tv_sec = 0;
-            timeout.tv_usec = 500000;
+            timeout.tv_usec = 350000;
             int ret = select(listen_sockfd + 1, &readfds, NULL, NULL, &timeout);
             if (ret > 0 && FD_ISSET(listen_sockfd, &readfds)) {
                 ack_rec = check_for_ack(last_sent_seq, listen_sockfd, server_addr_from, addr_size, chunk, N);
@@ -180,12 +191,12 @@ int main(int argc, char *argv[]) {
                 }
             }     
         }
-        for (int i = 0; i < N - 1; i+=1) {
-            pkts_sent[i] = pkts_sent[i + 1];
-        }
-        piped_pckts--;
+        // for (int i = 0; i < N - 1; i+=1) {
+        //     pkts_sent[i] = pkts_sent[i + 1];
+        // }
+        // piped_pckts--;
     }
-    free(pkts_sent);
+    // free(pkts_sent);
     fclose(fp);
     close(listen_sockfd);
     close(send_sockfd);

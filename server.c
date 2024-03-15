@@ -7,11 +7,11 @@
     #include "utils.h"
 
     int main() {
+        int start = time(NULL);
         int listen_sockfd, send_sockfd;
         struct sockaddr_in server_addr, client_addr_from, client_addr_to;
         socklen_t addr_size = sizeof(client_addr_from);
         unsigned short expected_seq_num = 0;
-        struct packet ack_pkt;
 
         // Create a UDP socket for sending
         send_sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -57,6 +57,7 @@
         unsigned short CHUNK = PAYLOAD_SIZE;
         while (!last) {
             struct packet rec_pkt;
+            struct packet ack_pkt;
             int bytes_read = recvfrom(listen_sockfd, &rec_pkt, sizeof(struct packet), 0,  (struct sockaddr *)&server_addr, &addr_size);
             if (bytes_read <= 0) {
                 perror("failed to receive");
@@ -83,11 +84,14 @@
                     close(send_sockfd);
                     return 1;
                 }
-            // printSend(&ack_pkt, 0);
+            printSend(&ack_pkt, 0);
         }
 
         fclose(fp);
         close(listen_sockfd);
         close(send_sockfd);
+        int end = time(NULL);
+        int diff = end-start;
+        printf("%d", diff);
         return 0;
     }
